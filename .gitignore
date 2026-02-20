@@ -97,3 +97,4 @@ secrets/
 /test-*.js
 /PR_SUMMARY.md
 /*-proposal.md
+.trees/
