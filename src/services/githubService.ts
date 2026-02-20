@@ -795,3 +795,30 @@ export async function managePRLabels({
     throw error;
   }
 }
+
+/**
+ * Fetches per-repo instructions from .claude-hub/instructions.md
+ * Returns the file content as a string, or null if not found
+ */
+export async function fetchRepoInstructions(owner: string, repo: string): Promise<string | null> {
+  try {
+    const client = getOctokit();
+    if (!client) {
+      return null;
+    }
+
+    const response = await client.repos.getContent({
+      owner,
+      repo,
+      path: '.claude-hub/instructions.md'
+    });
+
+    if ('content' in response.data && typeof response.data.content === 'string') {
+      return Buffer.from(response.data.content, 'base64').toString('utf-8');
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
