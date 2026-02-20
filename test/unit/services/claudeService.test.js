@@ -49,6 +49,10 @@ jest.mock('../../../src/utils/secureCredentials', () => ({
   })
 }));
 
+jest.mock('../../../src/services/githubService', () => ({
+  fetchRepoInstructions: jest.fn()
+}));
+
 // Now require the module under test
 const { execFileSync } = require('child_process');
 const { promisify } = require('util');
@@ -56,11 +60,16 @@ const { sanitizeBotMentions } = require('../../../src/utils/sanitize');
 const claudeService =
   require('../../../src/services/claudeService').default ||
   require('../../../src/services/claudeService');
+const { fetchRepoInstructions } = require('../../../src/services/githubService');
 
 describe('Claude Service', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
+    // Ensure test mode is restored (some tests set NODE_ENV to 'production' and may not restore it)
+    process.env.NODE_ENV = 'test';
+    // Default: no repo instructions
+    fetchRepoInstructions.mockResolvedValue(null);
   });
 
   test('processCommand should handle test mode correctly', async () => {
@@ -245,6 +254,39 @@ describe('Claude Service', () => {
       // Restore original function
       claudeService.processCommand = originalProcessCommand;
     }
+  });
+
+  describe('repo instructions integration', () => {
+    it('should append repo instructions to prompt when available', async () => {
+      fetchRepoInstructions.mockResolvedValue('# Custom Instructions\nDo the thing.');
+
+      await claudeService.processCommand({
+        repoFullName: 'owner/repo',
+        issueNumber: 1,
+        command: 'Fix the bug',
+        isPullRequest: false,
+        branchName: null,
+        operationType: 'default'
+      });
+
+      expect(fetchRepoInstructions).toHaveBeenCalledWith('owner', 'repo');
+    });
+
+    it('should not fail when repo instructions are not found', async () => {
+      fetchRepoInstructions.mockResolvedValue(null);
+
+      const result = await claudeService.processCommand({
+        repoFullName: 'owner/repo',
+        issueNumber: 1,
+        command: 'Fix the bug',
+        isPullRequest: false,
+        branchName: null,
+        operationType: 'default'
+      });
+
+      expect(fetchRepoInstructions).toHaveBeenCalledWith('owner', 'repo');
+      expect(result).toBeDefined();
+    });
   });
 
   test('processCommand should handle long commands properly', async () => {

@@ -5,6 +5,7 @@ import path from 'path';
 import { createLogger } from '../utils/logger';
 import { sanitizeBotMentions } from '../utils/sanitize';
 import secureCredentials from '../utils/secureCredentials';
+import { fetchRepoInstructions } from './githubService';
 import type {
   ClaudeCommandOptions,
   OperationType,
@@ -51,6 +52,13 @@ export async function processCommand({
       },
       'Processing command with Claude'
     );
+
+    // Fetch per-repo instructions early so it's available for both test and production paths
+    const [owner, repo] = repoFullName.split('/');
+    const repoInstructions = await fetchRepoInstructions(owner, repo);
+    if (repoInstructions) {
+      logger.info({ repo: repoFullName }, 'Appended per-repo instructions to prompt');
+    }
 
     const githubToken = secureCredentials.get('GITHUB_TOKEN');
 
@@ -107,7 +115,7 @@ For real functionality, please configure valid GitHub and Claude API tokens.`;
     const containerName = `claude-${sanitizedRepoName}-${Date.now()}`;
 
     // Create the full prompt with context and instructions based on operation type
-    const fullPrompt = createPrompt({
+    let fullPrompt = createPrompt({
       operationType,
       repoFullName,
       issueNumber,
@@ -115,6 +123,11 @@ For real functionality, please configure valid GitHub and Claude API tokens.`;
       isPullRequest,
       command
     });
+
+    // Append per-repo instructions if available
+    if (repoInstructions) {
+      fullPrompt += '\n\n## Repository-Specific Instructions\n\n' + repoInstructions;
+    }
 
     // Prepare environment variables for the container
     const envVars = createEnvironmentVars({
