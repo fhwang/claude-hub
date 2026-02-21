@@ -1,22 +1,25 @@
+// Shared mock Octokit instance so tests can configure methods on it
+const mockOctokitInstance = {
+  issues: {
+    createComment: jest.fn(),
+    addLabels: jest.fn(),
+    createLabel: jest.fn(),
+    removeLabel: jest.fn()
+  },
+  pulls: {
+    listReviews: jest.fn()
+  },
+  repos: {
+    getCombinedStatusForRef: jest.fn()
+  },
+  checks: {
+    listSuitesForRef: jest.fn()
+  }
+};
+
 // Mock Octokit before requiring modules that use it
 jest.mock('@octokit/rest', () => ({
-  Octokit: jest.fn().mockImplementation(() => ({
-    issues: {
-      createComment: jest.fn(),
-      addLabels: jest.fn(),
-      createLabel: jest.fn(),
-      removeLabel: jest.fn()
-    },
-    pulls: {
-      listReviews: jest.fn()
-    },
-    repos: {
-      getCombinedStatusForRef: jest.fn()
-    },
-    checks: {
-      listSuitesForRef: jest.fn()
-    }
-  }))
+  Octokit: jest.fn().mockImplementation(() => mockOctokitInstance)
 }));
 
 // Mock the logger before requiring other modules
@@ -183,6 +186,38 @@ describe('githubService', () => {
       expect(result.body).toBe('Test comment');
       expect(result.created_at).toBeDefined();
       expect(axios.post).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('fetchRepoInstructions', () => {
+    it('should return decoded content when file exists', async () => {
+      mockOctokitInstance.repos.getContent = jest.fn().mockResolvedValue({
+        data: {
+          content: Buffer.from('# CI Instructions\nWait for CI.').toString('base64'),
+          encoding: 'base64'
+        }
+      });
+
+      // Reset NODE_ENV to allow Octokit client to be used
+      const originalEnv = process.env.NODE_ENV;
+      delete process.env.NODE_ENV;
+
+      const result = await githubService.fetchRepoInstructions('testowner', 'testrepo');
+
+      process.env.NODE_ENV = originalEnv;
+      expect(result).toBe('# CI Instructions\nWait for CI.');
+    });
+
+    it('should return null when file does not exist', async () => {
+      mockOctokitInstance.repos.getContent = jest.fn().mockRejectedValue(new Error('Not Found'));
+
+      const originalEnv = process.env.NODE_ENV;
+      delete process.env.NODE_ENV;
+
+      const result = await githubService.fetchRepoInstructions('testowner', 'testrepo');
+
+      process.env.NODE_ENV = originalEnv;
+      expect(result).toBeNull();
     });
   });
 });
