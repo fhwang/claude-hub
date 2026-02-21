@@ -63,17 +63,17 @@ FROM node:24-slim AS production
 # Set shell with pipefail option for better error handling
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Install runtime dependencies with pinned versions
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git=1:2.39.5-0+deb12u2 \
-    curl=7.88.1-10+deb12u12 \
-    python3=3.11.2-1+b1 \
-    python3-pip=23.0.1+dfsg-1 \
-    python3-venv=3.11.2-1+b1 \
-    expect=5.45.4-2+b1 \
-    ca-certificates=20230311 \
-    gnupg=2.2.40-1.1 \
-    lsb-release=12.0-1 \
+    git \
+    curl \
+    python3 \
+    python3-pip \
+    python3-venv \
+    expect \
+    ca-certificates \
+    gnupg \
+    lsb-release \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI (not the daemon, just the client) with consolidated RUN and pinned versions
