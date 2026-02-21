@@ -1,8 +1,10 @@
 name: Main Pipeline
 
-# TODO: Re-enable automatic triggers after fixing permissions and pinning actions to SHAs
 on:
-  workflow_dispatch: # Manual-only for now
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
 
 env:
   NODE_VERSION: '20'
