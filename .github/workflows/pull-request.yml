@@ -30,11 +30,6 @@ jobs:
       run: ./scripts/combine-coverage.js
       env:
         NODE_ENV: test
-    - uses: codecov/codecov-action@v5
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        directory: ./coverage-combined
-        fail_ci_if_error: true
 
   security:
     runs-on: ubuntu-latest
