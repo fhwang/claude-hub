@@ -126,7 +126,7 @@ elif [ "${OPERATION_TYPE}" = "pr-review" ] || [ "${OPERATION_TYPE}" = "manual-pr
     ALLOWED_TOOLS="Read,GitHub,Bash(gh:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(ls:*),Bash(tree:*)"
     echo "Running Claude Code for PR review with broad research access..." >&2
 else
-    ALLOWED_TOOLS="Bash,Create,Edit,Read,Write,GitHub"  # Full tools for general operations
+    ALLOWED_TOOLS="Bash,Create,Edit,Read,Write,GitHub,WebFetch,WebSearch"  # Full tools for general operations
     echo "Running Claude Code with full tool access..." >&2
 fi
 
