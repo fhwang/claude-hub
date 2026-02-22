@@ -53,6 +53,19 @@ else
   echo "WARNING: No Claude authentication source found at /home/node/.claude." >&2
 fi
 
+# Set up Claude plugins for skills support (e.g., Superpowers)
+# Plugins are mounted read-only at /home/node/.claude-plugins by Docker volume
+if [ -d "/home/node/.claude-plugins" ]; then
+  echo "Setting up Claude plugins from mounted directory..." >&2
+  CLAUDE_WORK_DIR="${CLAUDE_WORK_DIR:-/workspace/.claude}"
+  mkdir -p "$CLAUDE_WORK_DIR/plugins"
+  cp -r /home/node/.claude-plugins/* "$CLAUDE_WORK_DIR/plugins/" 2>/dev/null || true
+  chown -R node:node "$CLAUDE_WORK_DIR/plugins"
+  echo "Claude plugins copied to $CLAUDE_WORK_DIR/plugins" >&2
+else
+  echo "No Claude plugins directory mounted, skipping plugins setup" >&2
+fi
+
 # Configure GitHub authentication
 if [ -n "${GITHUB_TOKEN}" ]; then
   export GH_TOKEN="${GITHUB_TOKEN}"
@@ -115,19 +128,21 @@ RESPONSE_FILE="/workspace/response.txt"
 touch "${RESPONSE_FILE}"
 chown node:node "${RESPONSE_FILE}"
 
-# Determine allowed tools based on operation type
+# Determine permission flags based on operation type
 if [ "${OPERATION_TYPE}" = "auto-tagging" ]; then
-    ALLOWED_TOOLS="Read,GitHub,Bash(gh issue edit:*),Bash(gh issue view:*),Bash(gh label list:*)"  # Minimal tools for auto-tagging (security)
+    ALLOWED_TOOLS="Read,GitHub,Bash(gh issue edit:*),Bash(gh issue view:*),Bash(gh label list:*)"
+    PERMISSION_FLAGS="--allowedTools \"${ALLOWED_TOOLS}\""
     echo "Running Claude Code for auto-tagging with minimal tools..." >&2
 elif [ "${OPERATION_TYPE}" = "pr-review" ] || [ "${OPERATION_TYPE}" = "manual-pr-review" ]; then
-    # PR Review: Broad research access + controlled write access
-    # Read access: Full file system, git history, GitHub data
-    # Write access: GitHub comments/reviews, PR labels, but no file deletion/modification
     ALLOWED_TOOLS="Read,GitHub,Bash(gh:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(ls:*),Bash(tree:*)"
+    PERMISSION_FLAGS="--allowedTools \"${ALLOWED_TOOLS}\""
     echo "Running Claude Code for PR review with broad research access..." >&2
 else
-    ALLOWED_TOOLS="Bash,Create,Edit,Read,Write,GitHub,WebFetch,WebSearch"  # Full tools for general operations
-    echo "Running Claude Code with full tool access..." >&2
+    # General operations: bypass permissions entirely.
+    # The container itself is the security boundary.
+    # This enables skills (Skill tool), respects .claude/settings.json, and allows all tools.
+    PERMISSION_FLAGS="--dangerously-skip-permissions"
+    echo "Running Claude Code with full permissions (container is security boundary)..." >&2
 fi
 
 # Check if command exists
@@ -160,7 +175,7 @@ if [ "${OUTPUT_FORMAT}" = "stream-json" ]; then
       BASH_DEFAULT_TIMEOUT_MS="${BASH_DEFAULT_TIMEOUT_MS}" \
       BASH_MAX_TIMEOUT_MS="${BASH_MAX_TIMEOUT_MS}" \
       /usr/local/share/npm-global/bin/claude \
-      --allowedTools "${ALLOWED_TOOLS}" \
+      ${PERMISSION_FLAGS} \
       --output-format stream-json \
       --verbose \
       --print "${COMMAND}"
@@ -175,7 +190,7 @@ else
       BASH_DEFAULT_TIMEOUT_MS="${BASH_DEFAULT_TIMEOUT_MS}" \
       BASH_MAX_TIMEOUT_MS="${BASH_MAX_TIMEOUT_MS}" \
       /usr/local/share/npm-global/bin/claude \
-      --allowedTools "${ALLOWED_TOOLS}" \
+      ${PERMISSION_FLAGS} \
       --verbose \
       --print "${COMMAND}" \
       > "${RESPONSE_FILE}" 2>&1
