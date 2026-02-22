@@ -402,16 +402,6 @@ function buildDockerArgs({
     dockerArgs.push('-v', `${absoluteAuthDir}:/home/node/.claude`);
   }
 
-  // Mount Claude plugins directory for skills support (e.g., Superpowers)
-  // Mounted read-only; the entrypoint copies plugins to a writable location
-  const hostPluginsDir = process.env['CLAUDE_PLUGINS_HOST_DIR'];
-  if (hostPluginsDir) {
-    const absolutePluginsDir = path.isAbsolute(hostPluginsDir)
-      ? hostPluginsDir
-      : path.resolve(process.cwd(), hostPluginsDir);
-    dockerArgs.push('-v', `${absolutePluginsDir}:/home/node/.claude-plugins:ro`);
-  }
-
   // Add environment variables as separate arguments
   Object.entries(envVars)
     .filter(([, value]) => value !== undefined && value !== '')

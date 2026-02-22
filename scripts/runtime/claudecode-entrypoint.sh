@@ -53,19 +53,6 @@ else
   echo "WARNING: No Claude authentication source found at /home/node/.claude." >&2
 fi
 
-# Set up Claude plugins for skills support (e.g., Superpowers)
-# Plugins are mounted read-only at /home/node/.claude-plugins by Docker volume
-if [ -d "/home/node/.claude-plugins" ]; then
-  echo "Setting up Claude plugins from mounted directory..." >&2
-  CLAUDE_WORK_DIR="${CLAUDE_WORK_DIR:-/workspace/.claude}"
-  mkdir -p "$CLAUDE_WORK_DIR/plugins"
-  cp -r /home/node/.claude-plugins/* "$CLAUDE_WORK_DIR/plugins/" 2>/dev/null || true
-  chown -R node:node "$CLAUDE_WORK_DIR/plugins"
-  echo "Claude plugins copied to $CLAUDE_WORK_DIR/plugins" >&2
-else
-  echo "No Claude plugins directory mounted, skipping plugins setup" >&2
-fi
-
 # Configure GitHub authentication
 if [ -n "${GITHUB_TOKEN}" ]; then
   export GH_TOKEN="${GITHUB_TOKEN}"
