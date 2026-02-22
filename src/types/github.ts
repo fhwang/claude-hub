@@ -4,6 +4,7 @@ export interface GitHubWebhookPayload {
   pull_request?: GitHubPullRequest;
   comment?: GitHubComment;
   check_suite?: GitHubCheckSuite;
+  assignee?: GitHubUser;
   repository: GitHubRepository;
   sender: GitHubUser;
   installation?: {
@@ -219,6 +220,18 @@ export interface GetCheckSuitesRequest {
   repoOwner: string;
   repoName: string;
   ref: string;
+}
+
+export interface CreateIssueRequest {
+  repoOwner: string;
+  repoName: string;
+  title: string;
+  body: string;
+}
+
+export interface CreateIssueResponse {
+  number: number;
+  html_url: string;
 }
 
 // Validation Types
