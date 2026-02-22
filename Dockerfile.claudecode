@@ -42,7 +42,8 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 RUN npm install -g @anthropic-ai/claude-code
 
 # Install Superpowers skills plugin at build time
-RUN claude install superpowers
+RUN claude plugin marketplace add obra/superpowers-marketplace && \
+  claude plugin install superpowers@superpowers-marketplace
 
 # Switch back to root
 USER root
