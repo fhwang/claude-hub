@@ -4,8 +4,6 @@ import secureCredentials from '../utils/secureCredentials';
 import type {
   CreateCommentRequest,
   CreateCommentResponse,
-  CreateIssueRequest,
-  CreateIssueResponse,
   AddLabelsRequest,
   ManagePRLabelsRequest,
   CreateRepositoryLabelsRequest,
@@ -114,82 +112,6 @@ export async function postComment({
     );
 
     throw new Error(`Failed to post comment: ${err.message}`);
-  }
-}
-
-/**
- * Creates a new issue in a GitHub repository
- */
-export async function createIssue({
-  repoOwner,
-  repoName,
-  title,
-  body
-}: CreateIssueRequest): Promise<CreateIssueResponse> {
-  try {
-    const repoPattern = /^[a-zA-Z0-9._-]+$/;
-    if (!repoPattern.test(repoOwner) || !repoPattern.test(repoName)) {
-      throw new Error('Invalid repository owner or name - contains unsafe characters');
-    }
-
-    logger.info(
-      {
-        repo: `${repoOwner}/${repoName}`,
-        title
-      },
-      'Creating issue on GitHub'
-    );
-
-    const client = getOctokit();
-    if (process.env.NODE_ENV === 'test' || !client) {
-      logger.info(
-        {
-          repo: `${repoOwner}/${repoName}`,
-          title
-        },
-        'TEST MODE: Would create issue on GitHub'
-      );
-
-      return {
-        number: 999,
-        html_url: `https://github.com/${repoOwner}/${repoName}/issues/999`
-      };
-    }
-
-    const { data } = await client.issues.create({
-      owner: repoOwner,
-      repo: repoName,
-      title,
-      body
-    });
-
-    logger.info(
-      {
-        repo: `${repoOwner}/${repoName}`,
-        issueNumber: data.number,
-        url: data.html_url
-      },
-      'Issue created successfully'
-    );
-
-    return {
-      number: data.number,
-      html_url: data.html_url
-    };
-  } catch (error) {
-    const err = error as Error & { response?: { data?: unknown } };
-    logger.error(
-      {
-        err: {
-          message: err.message,
-          responseData: err.response?.data
-        },
-        repo: `${repoOwner}/${repoName}`
-      },
-      'Error creating issue on GitHub'
-    );
-
-    throw new Error(`Failed to create issue: ${err.message}`);
   }
 }
 

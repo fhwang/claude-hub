@@ -2,7 +2,6 @@ import crypto from 'crypto';
 import { processCommand } from '../services/claudeService';
 import {
   postComment,
-  createIssue,
   addLabelsToIssue,
   getFallbackLabels,
   hasReviewedPRAtCommit,
@@ -309,16 +308,22 @@ async function handleIssueAssigned(
       'Error processing assigned issue'
     );
 
-    // Create a new issue reporting the failure
     try {
-      await createIssue({
+      const timestamp = new Date().toISOString();
+      const errorId = `err-${Math.random().toString(36).substring(2, 10)}`;
+
+      const errorMessage = sanitizeBotMentions(
+        `An error occurred while processing this issue. (Reference: ${errorId}, Time: ${timestamp})\n\nPlease check with an administrator to review the logs for more details.`
+      );
+
+      await postComment({
         repoOwner: repo.owner.login,
         repoName: repo.name,
-        title: `Bot failed to process issue #${issue.number}`,
-        body: `The bot was assigned to issue #${issue.number} but encountered an error while processing it.\n\n**Original issue:** #${issue.number}\n**Error:** ${err.message}`
+        issueNumber: issue.number,
+        body: errorMessage
       });
-    } catch (issueError) {
-      logger.error({ err: issueError }, 'Failed to create error report issue');
+    } catch (commentError) {
+      logger.error({ err: commentError }, 'Failed to post error comment on assigned issue');
     }
 
     return res.status(500).json({

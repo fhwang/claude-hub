@@ -33,9 +33,6 @@ jest.mock('../../../src/services/claudeService', () => ({
 
 jest.mock('../../../src/services/githubService', () => ({
   postComment: jest.fn().mockResolvedValue({ id: 456 }),
-  createIssue: jest
-    .fn()
-    .mockResolvedValue({ number: 999, html_url: 'https://github.com/owner/repo/issues/999' }),
   addLabelsToIssue: jest.fn().mockResolvedValue([]),
   getFallbackLabels: jest.fn().mockReturnValue([]),
   hasReviewedPRAtCommit: jest.fn().mockResolvedValue(false),
@@ -119,10 +116,6 @@ describe('GitHub Controller - Issue Assigned', () => {
 
     claudeService.processCommand.mockResolvedValue('Claude response');
     githubService.postComment.mockResolvedValue({ id: 456 });
-    githubService.createIssue.mockResolvedValue({
-      number: 999,
-      html_url: 'https://github.com/owner/repo/issues/999'
-    });
   });
 
   test('should process command when bot is assignee and sender is authorized', async () => {
@@ -196,17 +189,17 @@ describe('GitHub Controller - Issue Assigned', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'Webhook processed successfully' });
   });
 
-  test('should create error issue when processCommand fails', async () => {
+  test('should post error comment when processCommand fails', async () => {
     claudeService.processCommand.mockRejectedValue(new Error('Claude processing failed'));
 
     await githubController.handleWebhook(req, res);
 
-    expect(githubService.createIssue).toHaveBeenCalledWith(
+    expect(githubService.postComment).toHaveBeenCalledWith(
       expect.objectContaining({
         repoOwner: 'owner',
         repoName: 'repo',
-        title: 'Bot failed to process issue #42',
-        body: expect.stringContaining('Claude processing failed')
+        issueNumber: 42,
+        body: expect.stringContaining('An error occurred while processing this issue')
       })
     );
 

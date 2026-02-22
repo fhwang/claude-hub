@@ -222,18 +222,6 @@ export interface GetCheckSuitesRequest {
   ref: string;
 }
 
-export interface CreateIssueRequest {
-  repoOwner: string;
-  repoName: string;
-  title: string;
-  body: string;
-}
-
-export interface CreateIssueResponse {
-  number: number;
-  html_url: string;
-}
-
 // Validation Types
 export interface ValidatedGitHubParams {
   repoOwner: string;
