@@ -148,6 +148,11 @@ export const handleWebhook: WebhookHandler = async (req, res) => {
 
     const payload = req.body;
 
+    // Handle issue assignment for autonomous task execution
+    if (event === 'issues' && payload.action === 'assigned') {
+      return await handleIssueAssigned(payload, res);
+    }
+
     // Handle issues being opened for auto-tagging
     if (event === 'issues' && payload.action === 'opened') {
       return await handleIssueOpened(payload, res);
@@ -177,6 +182,162 @@ export const handleWebhook: WebhookHandler = async (req, res) => {
     return handleWebhookError(error, res);
   }
 };
+
+/**
+ * Handle issue assigned events for autonomous task execution
+ */
+async function handleIssueAssigned(
+  payload: GitHubWebhookPayload,
+  res: Response<WebhookResponse | ErrorResponse>
+): Promise<Response<WebhookResponse | ErrorResponse>> {
+  const issue = payload.issue;
+  const repo = payload.repository;
+  const assignee = payload.assignee;
+
+  if (!issue || !assignee) {
+    logger.error('Issue or assignee data is missing from payload');
+    return res.status(400).json({
+      error: 'Issue or assignee data is missing from payload'
+    });
+  }
+
+  // Check if the assignee is the bot
+  const botLogin = BOT_USERNAME.replace('@', '');
+  if (assignee.login !== botLogin) {
+    logger.info(
+      {
+        repo: repo.full_name,
+        issue: issue.number,
+        assignee: assignee.login,
+        botLogin
+      },
+      'Issue assigned to non-bot user, ignoring'
+    );
+    return res.status(200).json({ message: 'Webhook processed successfully' });
+  }
+
+  // Check if the sender (person who assigned) is authorized
+  const authorizedUsers = process.env.AUTHORIZED_USERS
+    ? process.env.AUTHORIZED_USERS.split(',').map(user => user.trim())
+    : [process.env.DEFAULT_AUTHORIZED_USER ?? 'admin'];
+  const senderLogin = payload.sender.login;
+
+  if (!authorizedUsers.includes(senderLogin)) {
+    logger.info(
+      {
+        repo: repo.full_name,
+        issue: issue.number,
+        sender: senderLogin
+      },
+      'Unauthorized user attempted to assign bot to issue'
+    );
+
+    try {
+      const errorMessage = sanitizeBotMentions(
+        `Sorry @${senderLogin}, only authorized users can assign issues to ${BOT_USERNAME}.`
+      );
+
+      await postComment({
+        repoOwner: repo.owner.login,
+        repoName: repo.name,
+        issueNumber: issue.number,
+        body: errorMessage
+      });
+    } catch (commentError) {
+      logger.error({ err: commentError }, 'Failed to post unauthorized assignment comment');
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Unauthorized user - assignment ignored',
+      context: {
+        repo: repo.full_name,
+        issue: issue.number,
+        sender: senderLogin
+      }
+    });
+  }
+
+  logger.info(
+    {
+      repo: repo.full_name,
+      issue: issue.number,
+      sender: senderLogin
+    },
+    'Processing issue assignment to bot'
+  );
+
+  try {
+    const command = `${issue.title}\n\n${issue.body ?? ''}`;
+
+    const claudeResponse = await processCommand({
+      repoFullName: repo.full_name,
+      issueNumber: issue.number,
+      command: command,
+      isPullRequest: false,
+      branchName: null,
+      operationType: 'default'
+    });
+
+    logger.info(
+      {
+        repo: repo.full_name,
+        issue: issue.number,
+        responseLength: claudeResponse ? claudeResponse.length : 0
+      },
+      'Issue assignment processing completed successfully'
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Issue assignment processed successfully',
+      context: {
+        repo: repo.full_name,
+        issue: issue.number,
+        type: 'issue_assigned'
+      }
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error(
+      {
+        err: err.message,
+        repo: repo.full_name,
+        issue: issue.number
+      },
+      'Error processing assigned issue'
+    );
+
+    try {
+      const timestamp = new Date().toISOString();
+      const errorId = `err-${Math.random().toString(36).substring(2, 10)}`;
+
+      const errorMessage = sanitizeBotMentions(
+        `An error occurred while processing this issue. (Reference: ${errorId}, Time: ${timestamp})\n\nPlease check with an administrator to review the logs for more details.`
+      );
+
+      await postComment({
+        repoOwner: repo.owner.login,
+        repoName: repo.name,
+        issueNumber: issue.number,
+        body: errorMessage
+      });
+    } catch (commentError) {
+      logger.error({ err: commentError }, 'Failed to post error comment on assigned issue');
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to process assigned issue',
+      message: err.message,
+      context: {
+        repo: repo.full_name,
+        issue: issue.number,
+        type: 'issue_assigned_error'
+      }
+    });
+  }
+}
 
 /**
  * Handle issue opened events for auto-tagging

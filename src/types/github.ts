@@ -4,6 +4,7 @@ export interface GitHubWebhookPayload {
   pull_request?: GitHubPullRequest;
   comment?: GitHubComment;
   check_suite?: GitHubCheckSuite;
+  assignee?: GitHubUser;
   repository: GitHubRepository;
   sender: GitHubUser;
   installation?: {
