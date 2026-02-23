@@ -52,6 +52,15 @@ if (!BOT_USERNAME.startsWith('@')) {
 }
 
 /**
+ * Check if a PR was authored by the bot
+ */
+function isBotAuthoredPR(pr: GitHubPullRequest): boolean {
+  const botLogin = BOT_USERNAME.replace(/^@/, '');
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  return pr.user?.login === botLogin;
+}
+
+/**
  * Verifies that the webhook payload came from GitHub using the secret token
  */
 function verifyWebhookSignature(req: WebhookRequest): boolean {
@@ -166,6 +175,11 @@ export const handleWebhook: WebhookHandler = async (req, res) => {
     // Handle check suite completion for automated PR review
     if (event === 'check_suite' && payload.action === 'completed') {
       return await handleCheckSuiteCompleted(payload, res);
+    }
+
+    // Handle pull request review submitted events (auto-respond on bot-authored PRs)
+    if (event === 'pull_request_review' && payload.action === 'submitted') {
+      return await handlePullRequestReviewSubmitted(payload, res);
     }
 
     // Handle pull request comment events
@@ -500,6 +514,96 @@ async function handleIssueComment(
 }
 
 /**
+ * Handle pull_request_review.submitted events on bot-authored PRs
+ */
+async function handlePullRequestReviewSubmitted(
+  payload: GitHubWebhookPayload,
+  res: Response<WebhookResponse | ErrorResponse>
+): Promise<Response<WebhookResponse | ErrorResponse>> {
+  const pr = payload.pull_request;
+  const review = payload.review;
+  const repo = payload.repository;
+
+  if (!pr || !review) {
+    return res.status(200).json({ message: 'Webhook processed successfully' });
+  }
+
+  // Only respond on bot-authored PRs
+  if (!isBotAuthoredPR(pr)) {
+    return res.status(200).json({ message: 'Webhook processed successfully' });
+  }
+
+  // Self-loop prevention: ignore reviews from the bot itself
+  const botLogin = BOT_USERNAME.replace(/^@/, '');
+  if (payload.sender.login === botLogin) {
+    logger.info(
+      { repo: repo.full_name, pr: pr.number },
+      'Ignoring review from bot itself to prevent self-loop'
+    );
+    return res.status(200).json({ message: 'Webhook processed successfully' });
+  }
+
+  // Only respond to changes_requested and commented reviews
+  const actionableStates = ['changes_requested', 'commented'];
+  if (!actionableStates.includes(review.state.toLowerCase())) {
+    logger.info(
+      { repo: repo.full_name, pr: pr.number, state: review.state },
+      'Ignoring non-actionable review state'
+    );
+    return res.status(200).json({ message: 'Webhook processed successfully' });
+  }
+
+  // Skip reviews with empty body (inline-only comments handled separately)
+  if (!review.body || review.body.trim() === '') {
+    logger.info(
+      { repo: repo.full_name, pr: pr.number },
+      'Skipping review with empty body (inline comments handled separately)'
+    );
+    return res.status(200).json({ message: 'Webhook processed successfully' });
+  }
+
+  logger.info(
+    {
+      repo: repo.full_name,
+      pr: pr.number,
+      reviewer: payload.sender.login,
+      reviewState: review.state
+    },
+    'Auto-responding to review on bot-authored PR'
+  );
+
+  const reviewBody = review.body;
+
+  try {
+    const claudeResponse = await processCommand({
+      repoFullName: repo.full_name,
+      issueNumber: pr.number,
+      command: `Address this PR review feedback:\n\n${reviewBody}`,
+      isPullRequest: true,
+      branchName: pr.head.ref
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Review feedback processed',
+      claudeResponse: claudeResponse,
+      context: {
+        repo: repo.full_name,
+        pr: pr.number,
+        type: 'pull_request_review',
+        branch: pr.head.ref
+      }
+    });
+  } catch (error) {
+    return handleCommandError(
+      error,
+      { repo, issue: { number: pr.number }, command: reviewBody },
+      res
+    );
+  }
+}
+
+/**
  * Handle pull request comment events
  */
 async function handlePullRequestComment(
@@ -528,6 +632,60 @@ async function handlePullRequestComment(
     },
     'Processing pull request comment'
   );
+
+  // Auto-respond on bot-authored PRs without requiring @mention
+  if (isBotAuthoredPR(pr)) {
+    const botLogin = BOT_USERNAME.replace(/^@/, '');
+
+    // Self-loop prevention: ignore comments from the bot itself
+    if (payload.sender.login === botLogin) {
+      logger.info(
+        { repo: repo.full_name, pr: pr.number },
+        'Ignoring comment from bot itself to prevent self-loop'
+      );
+      return res.status(200).json({ message: 'Webhook processed successfully' });
+    }
+
+    const commentBody = typeof comment.body === 'string' ? comment.body : '';
+    if (commentBody.trim()) {
+      logger.info(
+        {
+          repo: repo.full_name,
+          pr: pr.number,
+          commenter: payload.sender.login
+        },
+        'Auto-responding to review comment on bot-authored PR'
+      );
+
+      try {
+        const claudeResponse = await processCommand({
+          repoFullName: repo.full_name,
+          issueNumber: pr.number,
+          command: `Address this PR review comment:\n\n${commentBody}`,
+          isPullRequest: true,
+          branchName: pr.head.ref
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'Review comment processed',
+          claudeResponse: claudeResponse,
+          context: {
+            repo: repo.full_name,
+            pr: pr.number,
+            type: 'pull_request_review_comment',
+            branch: pr.head.ref
+          }
+        });
+      } catch (error) {
+        return handleCommandError(
+          error,
+          { repo, issue: { number: pr.number }, command: commentBody },
+          res
+        );
+      }
+    }
+  }
 
   // Check if comment mentions the bot
   if (typeof comment.body === 'string' && comment.body.includes(BOT_USERNAME)) {
