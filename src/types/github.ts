@@ -3,6 +3,7 @@ export interface GitHubWebhookPayload {
   issue?: GitHubIssue;
   pull_request?: GitHubPullRequest;
   comment?: GitHubComment;
+  review?: GitHubReview;
   check_suite?: GitHubCheckSuite;
   assignee?: GitHubUser;
   repository: GitHubRepository;
