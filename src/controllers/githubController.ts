@@ -56,7 +56,8 @@ if (!BOT_USERNAME.startsWith('@')) {
  */
 function isBotAuthoredPR(pr: GitHubPullRequest): boolean {
   const botLogin = BOT_USERNAME.replace(/^@/, '');
-  return pr.user.login === botLogin;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  return pr.user?.login === botLogin;
 }
 
 /**
@@ -631,6 +632,60 @@ async function handlePullRequestComment(
     },
     'Processing pull request comment'
   );
+
+  // Auto-respond on bot-authored PRs without requiring @mention
+  if (isBotAuthoredPR(pr)) {
+    const botLogin = BOT_USERNAME.replace(/^@/, '');
+
+    // Self-loop prevention: ignore comments from the bot itself
+    if (payload.sender.login === botLogin) {
+      logger.info(
+        { repo: repo.full_name, pr: pr.number },
+        'Ignoring comment from bot itself to prevent self-loop'
+      );
+      return res.status(200).json({ message: 'Webhook processed successfully' });
+    }
+
+    const commentBody = typeof comment.body === 'string' ? comment.body : '';
+    if (commentBody.trim()) {
+      logger.info(
+        {
+          repo: repo.full_name,
+          pr: pr.number,
+          commenter: payload.sender.login
+        },
+        'Auto-responding to review comment on bot-authored PR'
+      );
+
+      try {
+        const claudeResponse = await processCommand({
+          repoFullName: repo.full_name,
+          issueNumber: pr.number,
+          command: `Address this PR review comment:\n\n${commentBody}`,
+          isPullRequest: true,
+          branchName: pr.head.ref
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'Review comment processed',
+          claudeResponse: claudeResponse,
+          context: {
+            repo: repo.full_name,
+            pr: pr.number,
+            type: 'pull_request_review_comment',
+            branch: pr.head.ref
+          }
+        });
+      } catch (error) {
+        return handleCommandError(
+          error,
+          { repo, issue: { number: pr.number }, command: commentBody },
+          res
+        );
+      }
+    }
+  }
 
   // Check if comment mentions the bot
   if (typeof comment.body === 'string' && comment.body.includes(BOT_USERNAME)) {
