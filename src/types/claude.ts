@@ -43,6 +43,7 @@ export interface ClaudeEnvironmentVars {
   ANTHROPIC_API_KEY: string;
   BOT_USERNAME?: string;
   BOT_EMAIL?: string;
+  PR_HUMAN_REVIEWER?: string;
 }
 
 export interface DockerExecutionOptions {
