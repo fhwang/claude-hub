@@ -289,6 +289,136 @@ describe('Claude Service', () => {
     });
   });
 
+  describe('CI verification prompt', () => {
+    /**
+     * Helper: run processCommand in production mode and return the COMMAND env var
+     * (which contains the full prompt) from the Docker args.
+     */
+    async function getPromptFromDockerArgs(options, envOverrides = {}) {
+      const originalProcessCommand = claudeService.processCommand;
+      let capturedPrompt = null;
+
+      claudeService.processCommand = async opts => {
+        const originalNodeEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'production';
+
+        // Apply env overrides
+        const savedEnv = {};
+        for (const [key, value] of Object.entries(envOverrides)) {
+          savedEnv[key] = process.env[key];
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+
+        execFileSync.mockImplementation((cmd, args, _options) => {
+          if (args[0] === 'inspect') return '{}';
+          return 'mocked output';
+        });
+
+        const execFileAsync = promisify(require('child_process').execFile);
+        execFileAsync.mockImplementation(async (cmd, args, _options) => {
+          const commandArg = args.find(
+            arg => typeof arg === 'string' && arg.startsWith('COMMAND=')
+          );
+          if (commandArg) {
+            capturedPrompt = commandArg.replace('COMMAND=', '');
+          }
+          return { stdout: 'Claude response', stderr: '' };
+        });
+
+        try {
+          await originalProcessCommand(opts);
+        } finally {
+          process.env.NODE_ENV = originalNodeEnv;
+          for (const [key, value] of Object.entries(savedEnv)) {
+            if (value === undefined) {
+              delete process.env[key];
+            } else {
+              process.env[key] = value;
+            }
+          }
+        }
+      };
+
+      try {
+        await claudeService.processCommand(options);
+        return capturedPrompt;
+      } finally {
+        claudeService.processCommand = originalProcessCommand;
+      }
+    }
+
+    it('should include CI verification instructions in default prompt', async () => {
+      const prompt = await getPromptFromDockerArgs(
+        {
+          repoFullName: 'owner/repo',
+          issueNumber: 1,
+          command: 'Fix the bug',
+          isPullRequest: false,
+          branchName: null,
+          operationType: 'default'
+        },
+        { PR_HUMAN_REVIEWER: undefined }
+      );
+
+      expect(prompt).toContain('Post-PR CI Verification Loop');
+      expect(prompt).toContain('gh pr checks --watch');
+      expect(prompt).toContain('up to 3 times');
+      expect(prompt).toContain('gh pr comment');
+    });
+
+    it('should include reviewer request when PR_HUMAN_REVIEWER is set', async () => {
+      const prompt = await getPromptFromDockerArgs(
+        {
+          repoFullName: 'owner/repo',
+          issueNumber: 1,
+          command: 'Fix the bug',
+          isPullRequest: false,
+          branchName: null,
+          operationType: 'default'
+        },
+        { PR_HUMAN_REVIEWER: 'testreviewer' }
+      );
+
+      expect(prompt).toContain('gh pr edit <PR_NUMBER> --add-reviewer testreviewer');
+    });
+
+    it('should omit reviewer request when PR_HUMAN_REVIEWER is not set', async () => {
+      const prompt = await getPromptFromDockerArgs(
+        {
+          repoFullName: 'owner/repo',
+          issueNumber: 1,
+          command: 'Fix the bug',
+          isPullRequest: false,
+          branchName: null,
+          operationType: 'default'
+        },
+        { PR_HUMAN_REVIEWER: undefined }
+      );
+
+      expect(prompt).not.toContain('--add-reviewer');
+    });
+
+    it('should not include CI verification in auto-tagging prompt', async () => {
+      const prompt = await getPromptFromDockerArgs(
+        {
+          repoFullName: 'owner/repo',
+          issueNumber: 1,
+          command: 'Auto-tag this issue',
+          isPullRequest: false,
+          branchName: null,
+          operationType: 'auto-tagging'
+        },
+        { PR_HUMAN_REVIEWER: 'testreviewer' }
+      );
+
+      expect(prompt).not.toContain('Post-PR CI Verification Loop');
+    });
+  });
+
   test('processCommand should handle long commands properly', async () => {
     // Save original function for restoration
     const originalProcessCommand = claudeService.processCommand;

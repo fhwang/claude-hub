@@ -325,12 +325,38 @@ Complete the auto-tagging task using only the minimal required tools.`;
    - Post a brief comment like "I understand. Working on [task description]..." before starting
    - Use 'gh issue comment' or 'gh pr comment' to post this acknowledgment immediately
    - This lets the user know their request was received and is being processed
-
+${getCiVerificationInstructions()}
 **User Request:**
 ${command}
 
 Please complete this task fully and autonomously.`;
   }
+}
+
+/**
+ * Get CI verification instructions for the default prompt.
+ * If PR_HUMAN_REVIEWER is set, includes a review request step.
+ */
+function getCiVerificationInstructions(): string {
+  const reviewerUsername = process.env.PR_HUMAN_REVIEWER;
+  const reviewStep = reviewerUsername
+    ? `\n      \`gh pr edit <PR_NUMBER> --add-reviewer ${reviewerUsername}\``
+    : '';
+
+  return `9. **Post-PR CI Verification Loop:**
+   After creating a pull request, you MUST follow this CI verification loop:
+   a. Run \`gh pr checks --watch\` to wait for all CI checks to complete.
+   b. If all checks pass:${reviewStep}
+      - You're done!
+   c. If any checks fail:
+      - Identify the failed run with \`gh pr checks\`
+      - View the failure logs with \`gh run view <run-id> --log-failed\`
+      - Fix the issue, commit, and push to the same branch
+      - Run \`gh pr checks --watch\` again to wait for the new CI run
+   d. Repeat step c up to 3 times. If CI still fails after 3 fix attempts,
+      leave a comment on the PR using \`gh pr comment\` explaining what
+      failed and that human intervention is needed.
+`;
 }
 
 /**
@@ -363,7 +389,8 @@ function createEnvironmentVars({
     GITHUB_TOKEN: githubToken,
     ANTHROPIC_API_KEY: secureCredentials.get('ANTHROPIC_API_KEY') ?? '',
     BOT_USERNAME: process.env.BOT_USERNAME,
-    BOT_EMAIL: process.env.BOT_EMAIL
+    BOT_EMAIL: process.env.BOT_EMAIL,
+    PR_HUMAN_REVIEWER: process.env.PR_HUMAN_REVIEWER ?? ''
   };
 }
 
